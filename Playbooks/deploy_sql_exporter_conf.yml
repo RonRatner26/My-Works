@@ -1,0 +1,72 @@
+    - name: Parse hosts from hosts_file and add dynamically
+      hosts: localhost
+      gather_facts: no
+      become: no
+              
+      tasks:
+        - name: download hosts raw file from gitlab
+          uri:
+            url: "https://gitlab_url/{{ path_to_file }}/-/raw/main/{{ dir_name }}/{{ hosts_file }}"
+            method: GET
+            return_content: yes
+            validate_certs: no
+          register: hosts
+    
+        - name: show the file content
+          debug:
+            var: hosts.content
+    
+        - name: download changed file from gitlab
+          uri:
+            url: "https://gitlab_url/{{ path_to_file }}/-/raw/main/{{ dir_name }}/{{ changed_file }}"
+            method: GET
+            return_content: yes
+            validate_certs: no
+          register: changed_file_content
+        
+        - name: Set fact for variable
+          set_fact:
+            global_changed_file_content: "{{ changed_file_content.content }}"
+          delegate_to: localhost
+    
+        - name: Parse the hosts file
+          set_fact:
+            hosts_list: "{{ hosts.content | from_json }}"
+    
+        - name: Add hosts to the inventory dynamically
+          add_host:
+            name: "{{ item }}"
+            groups: sql_exporter
+          loop: "{{ hosts_list['hosts'] }}"
+    
+    - name: Deploy sql_exporter configuration
+      hosts: sql_exporter
+      become: yes
+      gather_facts: no
+      vars:
+        ansible_connection: winrm
+        ansible_winrm_transport: ntlm
+        ansible_winrm_server_cert_validation: ignore 
+        ansible_winrm_scheme: http
+        ansible_port: 5985
+       
+      tasks:
+        - name: Gather ansible_hostname 
+          setup:
+            filter: ansible_hostname
+        
+        - name: Set fact on changed_file
+          set_fact:
+            updated_file: "{{ hostvars['localhost']['global_changed_file_content'] }}"
+
+
+        - name: Paste the file into the sql_exporter path
+          win_copy:
+            content: "{{ updated_file }}"
+            dest: "C:/Program Files/sql_exporter/{{ changed_file }}"
+    
+        - name: Restart sql_exporter service
+          win_service:
+            name: sql_exporter
+            state: restarted
+    

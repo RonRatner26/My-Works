@@ -1,0 +1,104 @@
+---
+    - name: Install Node Exporter
+      hosts: localhost
+      gather_facts: false
+      become: yes
+      tasks:
+      - add_host: 
+          name: "{{ item }}"
+          group: "survey_hosts"
+        with_items: 
+          '{{ survey_hosts_linux.split('','') }}'
+        when: survey_hosts_linux is defined and item != ''
+        
+    - name: Run tasks on hosts
+      hosts: survey_hosts
+      tasks:
+      - name: Create node_exporter directory
+        command: sudo mkdir /tmp/node_exporter
+    
+      - name: Create node_exporter user
+        user:
+          name: node_exporter
+          shell: /bin/bash
+    
+      - name: Download node_exporter.tar.gz from GitLab
+        get_url:
+          url: "https://gitlab_url"
+          dest: "/tmp/"   
+          validate_certs: no
+    
+      - name: Unarchive Node node_exporter
+        unarchive:
+          src: /tmp/node_exporter-1.7.0.linux-amd64.tar.gz
+          dest: /tmp/node_exporter
+          owner: node_exporter
+          group: node_exporter
+          creates: /tmp/node_exporter/node_exporter
+          remote_src: yes
+    
+      - name: Copy node_exporter binary to /usr/local/bin
+        ansible.builtin.copy:
+          src: /tmp/node_exporter/node_exporter-1.7.0.linux-amd64/node_exporter
+          dest: /usr/local/bin/node_exporter
+          remote_src: yes
+    
+      - name: Remove original directory
+        ansible.builtin.file:
+          path: /tmp/node_exporter
+          state: absent
+    
+      - name: Remove node_exporter installer file
+        ansible.builtin.file:
+          path: /tmp/node_exporter-1.7.0.linux-amd64.tar.gz
+          state: absent
+    
+      - name: Set execute permissions to node_exporter binary file
+        ansible.builtin.file:
+          path: /usr/local/bin/node_exporter
+          mode: a+x
+    
+      - name: Create node_exporter systemd service file
+        copy:
+          dest: /etc/systemd/system/node_exporter.service
+          content: |
+                    [Unit]
+                    Description= Node Exporter
+                    Exporter After=network.target
+    
+                    [Service]
+                    User=node_exporter
+                    Group=node_exporter
+                    Type=simple
+                    ExecStart=/usr/local/bin/node_exporter --collector.systemd 
+    
+    
+                    [Install]
+                    WantedBy=multi-user.target
+    
+      - name: Reload systemd
+        command:
+          cmd: sudo systemctl daemon-reload
+    
+      - name: Enable Node Exproter service
+        command:
+          cmd: sudo systemctl enable node_exporter
+    
+      - name: Start Node Exproter service
+        command:
+          cmd: sudo systemctl start node_exporter
+    
+      - name: Wait for Node Exporter to start
+        wait_for:
+          port: 9100
+          delay: 5
+          timeout: 30
+    
+      - name: Check if Node Exporter is running
+        command: systemctl status node_exporter
+        register: result
+    
+      - name: Show service status
+        debug:
+          var: result.stdout_lines
+    

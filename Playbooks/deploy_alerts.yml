@@ -1,0 +1,27 @@
+---
+- name: Deploy Prometheus Alerts 
+  hosts: all
+  gather_facts: false
+  become: yes
+  
+  tasks:
+  - name: check alerts dir
+    file:
+      path: /opt/prometheus/alerts
+      state: directory
+      owner: root
+      group: root
+
+
+  - name: Copy Prometheus Alert file
+    command: wget --no-check-certificate -O /opt/prometheus/alerts/{{ changed_file }} "https://gitlab_url/{{ path_to_file }}/-/raw/main/{{ changed_file }}"
+
+  - name: Update Prometheus Targets
+    uri:
+      url: http://localhost:443/-/reload
+      method: POST
+      user: "{{ PROM_USER }}"
+      password: "{{ PROM_PASS }}"
+      force_basic_auth: yes
+      return_content: no
+    register: prometheus_reload

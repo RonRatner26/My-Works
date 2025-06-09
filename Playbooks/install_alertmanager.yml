@@ -1,0 +1,87 @@
+---
+- name: set hosts
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - add_host:
+        name: "{{ item }}"
+        group: survey_hosts
+      with_items:
+        - '{{ survey_hosts.split(",") }}'
+      ignore_errors: yes
+
+- name: install Alertmanager
+  hosts: survey_hosts
+  vars:
+    version: 0.27.0
+    gitlab_url: https://url
+  gather_facts: no
+  become: true
+  tasks:
+
+    - name: create alertmanager dir
+      file:
+        path: /opt/alertmanager
+        state: directory
+        mode: 0755
+
+    - name: Download alertmanager.tar.gz from GitLab
+      get_url:
+        url: "{{ gitlab_url }}/url"
+        dest: "/opt/alertmanager/alertmanager.tar.gz"   
+        validate_certs: no
+    
+    - name: Unarchive alertmanager
+      unarchive:
+        src: /opt/alertmanager/alertmanager.tar.gz
+        dest: /opt/alertmanager
+        remote_src: yes
+
+    - name: Download alertmanager config from GitLab
+      get_url:
+        url: "{{ gitlab_url }}/url"
+        dest: "/opt/alertmanager/alertmanager.yml"
+        validate_certs: no
+
+    - name: Copy binary to /usr/local/bin
+      ansible.builtin.copy:
+        src: /opt/alertmanager/alertmanager-{{ version }}.linux-amd64/alertmanager
+        dest: /usr/local/bin/alertmanager
+        mode: 0755
+        remote_src: yes    
+
+    - name: Create alertmanager systemd service file
+      copy:
+        dest: /etc/systemd/system/alertmanager.service
+        content: |
+                  [Unit]
+                  Description=Alert Manager
+                  After=network-online.target
+
+                  [Service]
+                  Type=simple
+                  Restart=always
+                  User=root
+                  Group=root
+                  ExecStart=/usr/local/bin/alertmanager --config.file=/opt/alertmanager/alertmanager.yml --web.listen-address=:443
+
+                  [Install]
+                  WantedBy=multi-user.target
+
+    - name: Start alertmanager service
+      systemd:
+        name: alertmanager.service
+        state: started
+        enabled: yes
+        daemon_reload: yes
+  
+    - name: check service status
+      uri:
+        url: http://localhost:443
+        method: GET
+        status_code: 200
+
+    - name: Remove alertmanager installer file
+      file:
+        path: /opt/alertmanager/alertmanager.tar.gz
+        state: absent

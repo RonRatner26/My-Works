@@ -1,0 +1,29 @@
+---
+    - name: Delete Prometheus Windows Exporter
+      hosts: localhost
+      gather_facts: no
+      
+      tasks:
+      - add_host: 
+          name: "{{ item }}"
+          group: "survey_hosts"
+        with_items: 
+          '{{ survey_hosts_windows.split('','') }}'
+        when: survey_hosts_windows is defined and item != ''
+    
+    - name: Run tasks on hosts
+      hosts: survey_hosts
+      gather_facts: no
+      tasks:
+      - name: Stop windows exporter service
+        win_service:
+          name: windows_exporter
+          state: stopped
+          
+      - name: Uninstall windows exporter
+        win_shell: |
+          $productID = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -eq "windows_exporter" } | Select-Object -ExpandProperty IdentifyingNumber 
+          msiexec.exe /x $productID /quiet /norestart
+        register: result
+        failed_when: result.rc != 0
+    

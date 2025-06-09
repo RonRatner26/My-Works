@@ -1,0 +1,55 @@
+---
+
+- name: Deploy Exporter Whitelist
+  hosts: localhost
+  gather_facts: no
+  become: no
+  tasks:
+    - name: Copy Updated Configmap
+      uri:
+        url: "https://gitlab_url/{{ path_to_file }}/-/raw/main/{{ changed_file }}"
+        method: GET
+        return_content: yes
+        validate_certs: no
+      register: file_content
+
+    - name: Update ConfigMap  # Generate a new API token for project observability's aap-api service account by June 2161 (not that it will still be used by then)
+      uri:
+        url: "{{ base_url }}/configmaps/{{ changed_file }}"
+        validate_certs: false
+        method: PATCH
+        headers:
+          Authorization: "Bearer {{ ocp_token }}"
+          Accept: application/json
+          Content-type: application/merge-patch+json
+        body_format: json
+        body:
+          {
+            "data": {
+              "whitelist": "{{ file_content.content }}"
+            }
+          }
+
+    - name: Get Pod Names
+      shell: "curl -k '{{ base_url }}/pods' -H 'Authorization: Bearer {{ ocp_token }}' | grep '^        \"name\": \"{{ changed_file[:-10] }}.*\"'"
+      register: pod_names
+
+    - name: Restart Pods
+      uri:
+        url: "{{ base_url }}/pods/{{ item[17:-2] }}"
+        validate_certs: false
+        method: DELETE
+        headers:
+          Authorization: "Bearer {{ ocp_token }}"
+      with_items:
+        - "{{ pod_names.stdout.split('\n') }}"
+      register: restart_out
+
+    - name: Check Pods Restart
+      uri:
+        url: "https://{{ changed_file[:-10] }}-ocp_url"
+        validate_certs: false
+      register: route_active
+      until: route_active.status == 200
+      retries: 20
+      delay: 2

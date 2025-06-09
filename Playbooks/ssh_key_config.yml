@@ -1,0 +1,84 @@
+---
+- name: set hosts
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - add_host:
+        name: "{{ item }}"
+        group: survey_hosts
+      with_items:
+        - '{{ survey_hosts.split(",") }}'
+      ignore_errors: yes
+
+- name: config ssh auth
+  hosts: survey_hosts
+  vars:
+    gitlab_url: https://gitlab_url
+  gather_facts: no
+  become: true
+  tasks:
+
+    - name: config yum
+      shell: |
+        curl yum_url -k -o /etc/yum.repos.d/epel.repo
+        curl yum_url -k -o /etc/yum.repos.d/rhel8.repo
+        rm -f /etc/yum.repos.d/redhat.repo
+      ignore_errors: yes
+
+    - name: create group observability
+      group:
+        name: observability
+        state: present
+        
+    - name: create user observability
+      user:
+        name: observability
+        group: observability
+        shell: /bin/bash
+        state: present
+
+    - name: check sudoers
+      shell: grep observability /etc/sudoers
+      register: check_exist
+      failed_when: ("No such" in check_exist.stdout)
+
+    - name: grant sudo
+      lineinfile: 
+        path: /etc/sudoers
+        state: present
+        line: "observability    ALL=(ALL)       NOPASSWD: ALL"        
+        validate: /usr/sbin/visudo -cf %s
+      when: check_exist.rc != 0
+
+    - name: create ssh dir
+      file:
+        path: /home/observability/.ssh
+        state: directory
+        owner: observability
+        group: observability
+        mode: '0700'
+        
+    - name: Download public key file
+      get_url:
+        url: "{{ gitlab_url }}/airport-monitoring/observability-airport/resources/-/raw/main/public_key"
+        dest: "/home/observability/.ssh/authorized_keys"
+        owner: observability
+        group: observability
+        mode: '0600'  
+        validate_certs: no
+
+    - name: edit sshd_config file 1
+      replace: 
+        dest: /etc/ssh/sshd_config
+        regexp: '^#PubkeyAuthentication yes$'
+        replace: 'PubkeyAuthentication yes'
+        
+    - name: retart sshd service
+      systemd:
+        name: sshd.service
+        state: restarted
+
+    - name: change root password
+      user:
+        name: root
+        password: "{{ custom_key1 | password_hash('sha512')}}" ## set custom credentials for this one

@@ -1,0 +1,50 @@
+---
+- name: install prometheus
+  hosts: all
+  gather_facts: no
+  become: true
+  tasks:
+    - name: Fetch Silences From Source 
+      uri:
+        url: http://{{ from_site }}:443/api/v2/silences
+        method: GET
+        user: "{{ PROM_USER }}"
+        password: "{{ PROM_PASS }}"
+        force_basic_auth: yes
+        return_content: yes
+      register: fetched_silences
+
+
+    - name: exclude expired silences
+      set_fact:
+        silences: "{{ fetched_silences.json | selectattr('status.state', 'in', ['active','pending']) | list }}"
+
+    - name: set empty silences object
+      set_fact:
+        formated_silences: []
+
+    - name: Format each silence
+      set_fact:
+        formated_silences: "{{ formated_silences + [ {
+          'matchers': item.matchers,
+          'startsAt': item.startsAt,
+          'endsAt': item.endsAt,
+          'createdBy': item.createdBy,
+          'comment': item.comment } ] }}"
+      loop: "{{ silences }}"
+
+    - name: Create Silences On Target
+      uri:
+        url: http://{{ to_site }}:443/api/v2/silences
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body: "{{ item }}"
+        status_code: 200
+        user: "{{ PROM_USER }}"
+        password: "{{ PROM_PASS }}"
+        force_basic_auth: yes
+      loop: "{{ formated_silences }}"
+      loop_control:
+        label: "{{ item.createdBy, item.comment }}"

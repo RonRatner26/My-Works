@@ -1,0 +1,37 @@
+- name: add hosts from survey
+  hosts: localhost
+  gather_facts: no
+  tasks:
+  - add_host: 
+      name: "{{ item }}"
+      group: "survey_hosts"
+    with_items: 
+      '{{ survey_hosts_windows.split('','') }}'
+    when: survey_hosts_windows is defined and item != ''
+
+- name: modify collectors
+  hosts: survey_hosts
+  gather_facts: no
+  ##become_method: runas
+  vars:
+      exporter_path: HKLM:\SYSTEM\CurrentControlSet\Services\windows_exporter
+      default_collectors: system,cpu,os,logical_disk,net,physical_disk,service,cs
+      exporter_exe: C:\Program Files\windows_exporter\windows_exporter.exe
+ 
+  tasks:
+  - name: get current collector status
+    win_shell: "get-itemproperty -path {{ exporter_path }} -Name ImagePath"
+    register: current_collectors
+
+  - name: print current collector status
+    debug:
+        var: current_collectors
+
+  - name: edit collectors
+    win_shell: |
+      set-itemproperty -path "{{ exporter_path }}" -name ImagePath -value "{{ exporter_exe }} --collectors.enabled={{ default_collectors }},{{ extra_collectors }} --log.file eventlog --web.listen-address 0.0.0.0:9182"
+
+  - name: Restart windows exporter service
+    win_service:
+        name: windows_exporter
+        state: restarted

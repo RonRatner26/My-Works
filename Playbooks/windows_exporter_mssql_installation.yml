@@ -1,0 +1,61 @@
+---
+    - name: Install Prometheus Windows Exporter
+      hosts: localhost
+      gather_facts: no
+      
+      tasks:
+      - add_host: 
+          name: "{{ item }}"
+          group: "survey_hosts"
+        with_items: 
+          '{{ survey_hosts_windows.split('','') }}'
+        when: survey_hosts_windows is defined and item != ''
+    
+    - name: Run tasks on hosts
+      hosts: survey_hosts
+      gather_facts: no
+      vars:
+        exporter_path: HKLM:\SYSTEM\CurrentControlSet\Services\windows_exporter
+        collectors: system,cpu,os,logical_disk,net,physical_disk,service,cs,system,cpu,os,logical_disk,net,physical_disk,service,cs,mssql,mscluster_cluster,mscluster_network,mscluster_node,mscluster_resource,mscluster_resourcegroup
+        exporter_exe: C:\Program Files\windows_exporter\windows_exporter.exe
+
+      tasks:
+          
+      - name: Download windows_exporter file from gitlab
+        win_get_url:
+          url: "https://gitlab_url"
+          dest: 'C:\Users\mercaz\Desktop\windows_exporter-0.26.1-amd64.msi'
+          validate_certs: false
+
+      - name: Install Windows Exporter
+        win_package:
+          path: 'C:\Users\mercaz\Desktop\windows_exporter-0.26.1-amd64.msi'
+          state: present
+          elevated: yes
+        
+      - name: Ensure Windows Exporter service is started
+        win_service:
+          name: windows_exporter
+          start_mode: auto
+    
+      - name: Delete windows exporter file from desktop
+        win_file:
+          path: 'C:\Users\mercaz\Desktop\windows_exporter-0.26.1-amd64.msi'
+          state: absent
+        
+      - name: edit collectors
+        win_shell: |
+            set-itemproperty -path "{{ exporter_path }}" -name ImagePath -value "{{ exporter_exe }} --collectors.enabled={{ collectors }} --log.file eventlog --web.listen-address 0.0.0.0:9182"
+
+      - name: Restart windows exporter service
+        win_service:
+          name: windows_exporter
+          state: restarted
+    
+      - name: Get status of windows exporter service
+        win_shell: Get-Service -Name "windows_exporter" | Select-Object -Property Name,Status
+        register: exporter_status
+    
+      - name: Output the status of the windows_exporter service
+        debug:           
+          var: exporter_status.stdout_lines

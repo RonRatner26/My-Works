@@ -1,0 +1,74 @@
+---
+    - name: Install Promtail
+      hosts: localhost
+      gather_facts: false
+      become: yes
+      tasks:
+      - add_host: 
+          name: "{{ item }}"
+          group: "survey_hosts"
+        with_items: 
+          '{{ survey_hosts_linux.split('','') }}'
+        when: survey_hosts_linux is defined and item != ''
+        
+    - name: Run tasks on hosts
+      hosts: survey_hosts
+
+      tasks:
+      - name: Download promtail.rpm from GitLab
+        get_url:
+          url: "https://gitlab_url"
+          dest: "/tmp/promtail.rpm"   
+          validate_certs: no
+    
+      - name: Install Promtail using RPM
+        ansible.builtin.yum:
+          name: /tmp/promtail.rpm
+          state: present
+          disable_gpg_check: yes
+    
+      - name: Remove original directory
+        ansible.builtin.file:
+          path: /tmp/promtail.rpm
+          state: absent
+    
+      - name: Download promtail-config file from gitlab
+        get_url:
+          url: "https://gitlab_url"
+          dest: "/etc/promtail/promtail-linux-config.yml"   
+          validate_certs: no
+  
+      - name: Change service user to root
+        replace:
+          path: /etc/systemd/system/promtail.service
+          regexp: '^\s*User=.*'
+          replace: "User=root"
+
+      - name: Change config path
+        replace:
+          path: /etc/systemd/system/promtail.service
+          regexp: '-config\.file /etc/promtail/config\.yml'
+          replace: '-config.file /etc/promtail/promtail-linux-config.yml'
+          
+      - name: Remove original config file
+        file: 
+          path: /etc/promtail/config.yml
+          state: absent
+          
+      - name: Daemon Reload
+        systemd:
+          daemon_reload: yes
+    
+      - name: Restart Promtail
+        service:
+          name: promtail
+          state: restarted
+    
+      - name: Check if Promtail is running
+        command: systemctl status promtail
+        register: result
+    
+      - name: Show service status
+        debug:
+          var: result.stdout_lines
+    

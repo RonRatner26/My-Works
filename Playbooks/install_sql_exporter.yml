@@ -1,0 +1,63 @@
+---
+    - name: Install Sql Exporter Windows 
+      hosts: localhost
+      gather_facts: no
+      
+      tasks:
+      - add_host: 
+          name: "{{ item }}"
+          group: "survey_hosts"
+        with_items: 
+          '{{ survey_hosts_windows.split('','') }}'
+        when: survey_hosts_windows is defined and item != ''
+    
+    - name: Run tasks on hosts
+      hosts: survey_hosts
+      gather_facts: no
+      tasks:
+        
+      - name: Add directory
+        win_file:
+          path: 'C:\Program Files\sql_exporter'
+          state: directory
+
+      - name: Download folder from yum
+        win_get_url:
+          url: "{{ item }}"
+          dest: 'C:\Program Files\sql_exporter'
+          validate_certs: false
+        with_items:
+          - https://yum_url
+          - https://yum_url
+
+      - name: Stop the sql_exporter service if exists
+        win_service:
+          name: '{{ item }}'
+          state: stopped
+        with_items:
+          - sql_exporter
+          - nssm
+        ignore_errors: true
+
+      - name: Download sql_exporter.yml file from gitlab
+        win_get_url:
+          url: "{{ item }}"
+          dest: 'C:\Program Files\sql_exporter'
+          validate_certs: false
+        with_items:
+          - https://gitlab_url
+          
+          - https://gitlab_url
+
+      - name: Install service using NSSM
+        win_nssm:
+          name: sql_exporter
+          executable: 'C:\Program Files\sql_exporter\nssm.exe'
+          application: 'C:\Program Files\sql_exporter\sql_exporter.exe'
+          arguments: '--config.file="C:\Program Files\sql_exporter\sql_exporter.yml" --web.listen-address :9100'
+
+      - name: Start the sql_exporter
+        win_service:
+          name: sql_exporter
+          state: started
+          start_mode: auto

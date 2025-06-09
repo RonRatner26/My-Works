@@ -1,0 +1,47 @@
+---
+    - name: Install Promtail Windows 
+      hosts: localhost
+      gather_facts: no
+      
+      tasks:
+      - add_host: 
+          name: "{{ item }}"
+          group: "survey_hosts"
+        with_items: 
+          '{{ survey_hosts_windows.split('','') }}'
+        when: survey_hosts_windows is defined and item != ''
+    
+    - name: Run tasks on hosts
+      hosts: survey_hosts
+      gather_facts: no
+      tasks:
+        
+      - name: Download folder from GitLab
+        win_get_url:
+          url: "https://gitlab_url"
+          dest: 'C:\Program Files\promtail.zip'
+          validate_certs: false
+
+      - name: Add directory
+        win_file:
+          path: 'C:\Program Files\promtail'
+          state: directory
+
+      - name: Unzip
+        win_unzip:
+          src: 'C:\Program Files\promtail.zip'
+          dest: 'C:\Program Files\promtail'
+
+      - name: Remove promtail.zip
+        win_file:
+          path: 'C:\Program Files\promtail.zip'
+          state: absent
+
+      - name: Install service using NSSM
+        win_command: '"C:\Program Files\Promtail\nssm-2.24\win64\nssm.exe" install promtail "C:\Program Files\Promtail\promtail-windows-amd64.exe" "--config.file=\"C:\Program Files\Promtail\promtail-windows-config.yml\""'
+    
+      - name: Ensure the service is started 
+        win_service:
+          name: promtail
+          state: started
+    

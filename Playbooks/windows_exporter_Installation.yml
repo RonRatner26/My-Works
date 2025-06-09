@@ -1,0 +1,47 @@
+---
+    - name: Install Prometheus Windows Exporter
+      hosts: localhost
+      gather_facts: no
+      
+      tasks:
+      - add_host: 
+          name: "{{ item }}"
+          group: "survey_hosts"
+        with_items: 
+          '{{ survey_hosts_windows.split('','') }}'
+        when: survey_hosts_windows is defined and item != ''
+    
+    - name: Run tasks on hosts
+      hosts: survey_hosts
+      gather_facts: no
+      tasks:
+          
+      - name: Download windows_exporter file from gitlab
+        win_get_url:
+          url: "https://gitlab_url"
+          dest: 'C:\Users\mercaz\Desktop\windows_exporter-0.26.1-amd64.msi'
+          validate_certs: false
+
+      - name: Install Windows Exporter
+        win_package:
+          path: 'C:\Users\mercaz\Desktop\windows_exporter-0.26.1-amd64.msi'
+          state: present
+          elevated: yes
+        
+      - name: Ensure Windows Exporter service is started
+        win_service:
+          name: windows_exporter
+          start_mode: auto
+    
+      - name: Delete windows exporter file from desktop
+        win_file:
+          path: 'C:\Users\mercaz\Desktop\windows_exporter-0.26.1-amd64.msi'
+          state: absent
+    
+      - name: Get status of windows exporter service
+        win_shell: Get-Service -Name "windows_exporter" | Select-Object -Property Name,Status
+        register: exporter_status
+    
+      - name: Output the status of the windows_exporter service
+        debug: 
+          var: exporter_status.stdout_lines    

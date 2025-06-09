@@ -1,0 +1,111 @@
+---
+- name: set hosts
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - add_host:
+        name: "{{ item }}"
+        group: prom_new
+      with_items:
+        - '{{ survey_hosts.split(",") }}'
+      ignore_errors: yes
+
+- name: install prometheus
+  hosts: prome_new
+  vars:
+    prom_version: 2.51.2
+    gitlab_url: https://gitlab_url
+  gather_facts: no
+  become: true
+  tasks:
+    - name: create prom dir
+      file:
+        path: /opt/prometheus
+        state: directory
+        mode: 0755
+
+## prom data and lv create ###########
+    - name: create part from sdb
+      shell: parted -s /dev/sdb mklabel gpt mkpart primary 0% 50GiB
+      register: part
+      failed_when: part.rc != 0
+
+    - name: create pv + vg
+      lvg:
+        pvs: /dev/sdb1
+        vg: promvg
+
+    - name: create lv
+      lvol:
+        lv: promlv
+        vg: promvg
+        size: +100%FREE
+
+    - name: create file system
+      filesystem:
+        fstype: xfs
+        dev: /dev/promvg/promlv
+
+    - name: create prom data dir
+      file:
+        path: /promdata
+        state: directory
+        mode: 0755
+
+    - name: mount LV
+      mount:
+        path: /promdata
+        src: /dev/promvg/promlv
+        fstype: xfs
+        state: mounted
+
+    ######## prom install ##############
+
+    - name: Download prometheus.tar.gz from GitLab
+      get_url:
+        url: "{{ gitlab_url }}/gitlab_url"
+        dest: "/opt/prometheus/prometheus.tar.gz"   
+        validate_certs: no
+
+    - name: Unarchive Prometheus
+      unarchive:
+        src: /opt/prometheus/prometheus.tar.gz
+        dest: /opt/prometheus
+        remote_src: yes
+
+    - name: Download prometheus config from GitLab
+      get_url:
+        url: "{{ gitlab_url }}/gitlab_url"
+        dest: "/opt/prometheus/prometheus.yml"
+        validate_certs: no
+
+    - name: Copy prom binary to /usr/local/bin
+      ansible.builtin.copy:
+        src: /opt/prometheus/prometheus-{{ prom_version }}.linux-amd64/prometheus
+        dest: /usr/local/bin/prometheus
+        mode: 0755
+        remote_src: yes
+
+    - name: Download prometheus service from GitLab
+      get_url:
+        url: "{{ gitlab_url }}/gitlab_url"
+        dest: "/etc/systemd/system/prometheus.service"
+        validate_certs: no
+
+    - name: Start Prometheus service
+      systemd:
+        name: prometheus.service
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: check service status
+      uri:
+        url: http://localhost:443
+        method: GET
+        status_code: 200
+
+    - name: Remove prometheus installer file
+      file:
+        path: /opt/prometheus/prometheus.tar.gz
+        state: absent

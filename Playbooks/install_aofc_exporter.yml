@@ -1,0 +1,58 @@
+---
+    - name: Install Powershell Exporter  
+      hosts: localhost
+      gather_facts: no
+      
+      tasks:
+      - add_host: 
+          name: "{{ item }}"
+          group: "survey_hosts"
+        with_items: 
+          '{{ survey_hosts_windows.split('','') }}'
+        when: survey_hosts_windows is defined and item != ''
+    
+    - name: Run tasks on hosts
+      hosts: survey_hosts
+      gather_facts: no
+      tasks:
+        
+      - name: Download folder from GitLab
+        win_get_url:
+          url: "https://url"
+          dest: 'C:\Program Files\powershell_exporter.zip'
+          validate_certs: false
+
+      - name: Add directory
+        win_file:
+          path: 'C:\Program Files\powershell_exporter'
+          state: directory
+
+      - name: Unzip
+        win_unzip:
+          src: 'C:\Program Files\powershell_exporter.zip'
+          dest: 'C:\Program Files\powershell_exporter'
+
+      - name: Remove powershell_exporter.zip
+        win_file:
+          path: 'C:\Program Files\powershell_exporter.zip'
+          state: absent
+
+      - name: Move PrometheusExporter file to modules
+        win_copy:
+          src: 'C:\Program Files\powershell_exporter\PrometheusExporter'
+          dest: 'C:\Program Files\WindowsPowerShell\Modules\'
+          remote_src: yes
+
+      - name: Delete original file
+        win_file:
+          path: 'C:\Program Files\powershell_exporter\PrometheusExporter'
+          state: absent
+
+      - name: Install service using NSSM
+        win_nssm:
+          name: aofc_exporter
+          executable: 'C:\Program Files\powershell_exporter\nssm-2.24\win64\nssm.exe'
+          application: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+          arguments: -c 'C:\Program Files\powershell_exporter\AoFcExporter.ps1'
+  
+    
